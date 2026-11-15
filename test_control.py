@@ -61,6 +61,37 @@ class ControlTests(unittest.TestCase):
             control.main()
             terminal.assert_called_once_with(['/usr/bin/sudo', '-n', control.BROKER, 'approve', 'abc'])
 
+    def test_remote_approval_requires_live_matching_id_and_a_pty(self):
+        for request in [None, {'id': 'different', 'live': True, 'state': 'pending'},
+                        {'id': 'abc', 'live': False, 'state': 'pending'},
+                        {'id': 'abc', 'live': True, 'state': 'approved'}]:
+            with patch.object(control.sys, 'argv', ['control', 'approve-terminal', 'abc']), \
+                 patch.object(control, 'broker_status', return_value={'request': request}), \
+                 patch.object(control.os, 'execv') as run:
+                with self.assertRaises(ValueError):
+                    control.main()
+                run.assert_not_called()
+        with patch.object(control.sys, 'argv', ['control', 'approve-terminal', 'abc']), \
+             patch.object(control, 'broker_status', return_value={'request': {'id': 'abc', 'live': True, 'state': 'pending'}}), \
+             patch.object(control.sys.stdin, 'isatty', return_value=False), \
+             patch.object(control.os, 'execv') as run:
+            with self.assertRaises(ValueError):
+                control.main()
+            run.assert_not_called()
+
+    def test_remote_approval_execs_existing_broker_with_id_only(self):
+        with patch.object(control.sys, 'argv', ['control', 'approve-terminal', 'abc']), \
+             patch.object(control, 'broker_status', return_value={'request': {'id': 'abc', 'live': True, 'state': 'pending'}}), \
+             patch.object(control.sys.stdin, 'isatty', return_value=True), \
+             patch.object(control.sys.stdout, 'isatty', return_value=True), \
+             patch.object(control.os, 'execv') as run:
+            control.main()
+            run.assert_called_once_with('/usr/bin/sudo',
+                ['/usr/bin/sudo', '-n', control.BROKER, 'approve', 'abc'])
+        with patch.object(control.sys, 'argv', ['control', 'approve-terminal', 'abc', 'forbidden-extra-input']):
+            with self.assertRaises(ValueError):
+                control.main()
+
     def test_approve_requires_pending_request(self):
         with patch.object(control.sys, 'argv', ['control', 'approve']), \
              patch.object(control, 'broker_status', return_value={'request': None}):

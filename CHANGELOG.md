@@ -1,3 +1,10 @@
+## 0.5.1
+
+- Add plugin-managed Omarchy routing and headless registration without package edits.
+- Check discovery and refresh registration through the native package-update hook.
+- Validate remote terminal approval IDs and explain chat/private-input limitations.
+- Keep broker, enrollment and ordinary sudo unchanged.
+
 ## 0.5.0
 
 - Rename the widget to Omarchy Agent Access; keep the existing plugin ID.

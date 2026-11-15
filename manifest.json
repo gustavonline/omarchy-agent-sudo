@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "io.github.gustavonline.passwordless-sudo",
   "name": "Omarchy Agent Access",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "author": "Gustav Andersen",
   "license": "MIT",
   "description": "Phone-approved access windows for local and remote agents.",

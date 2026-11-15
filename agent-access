@@ -11,6 +11,11 @@ import subprocess
 import sys
 
 HERE = Path(__file__).resolve().parent
+# Python -I omits the script directory; load only the bundled module.
+import importlib.util
+_registration_spec = importlib.util.spec_from_file_location('agent_access_registration', HERE / 'registration.py')
+registration = importlib.util.module_from_spec(_registration_spec)
+_registration_spec.loader.exec_module(registration)
 BROKER = '/usr/local/sbin/z13-admin'
 
 
@@ -64,26 +69,11 @@ def root_upgrade_needed():
 
 
 def skill_links(home=None):
-    home = Path.home() if home is None else Path(home)
-    return [home / base / 'omarchy-agent-access' for base in ('.agents/skills', '.claude/skills', '.codex/skills')]
+    return registration.skill_links(Path.home() if home is None else home)
 
 
 def install_skill(home=None):
-    for link in skill_links(home):
-        link.parent.mkdir(parents=True, exist_ok=True)
-        if link.is_symlink() and link.resolve() == HERE:
-            continue
-        if link.exists() or link.is_symlink():
-            raise ValueError(f'An unrelated skill already occupies {link}')
-        link.symlink_to(HERE, target_is_directory=True)
-    home = Path.home() if home is None else Path(home)
-    entry = home / '.local/bin/omarchy-agent-access'
-    entry.parent.mkdir(parents=True, exist_ok=True)
-    if entry.is_symlink() and entry.resolve() == HERE / 'agent-access':
-        return
-    if entry.exists() or entry.is_symlink():
-        raise ValueError(f'An unrelated command already occupies {entry}')
-    entry.symlink_to(HERE / 'agent-access')
+    registration.install(home)
 
 
 def doctor():
@@ -101,7 +91,12 @@ def doctor():
         checks['broker'] = False
     checks['rootCurrent'] = not root_upgrade_needed()
     checks['skill'] = all(link.is_symlink() and link.resolve() == HERE for link in skill_links())
-    result = {'ok': all(checks.values()), 'checks': checks}
+    failures = registration.problems()
+    checks['discovery'] = not failures
+    checks['command'] = shutil.which('omarchy-agent-access') == str(Path.home() / '.local/bin/omarchy-agent-access')
+    if not checks['command']:
+        failures.append({'path': str(Path.home() / '.local/bin/omarchy-agent-access'), 'repair': 'Put ~/.local/bin on PATH, then run install-skill for a missing command'})
+    result = {'ok': all(checks.values()), 'checks': checks, 'registrationProblems': failures}
     print(json.dumps(result, indent=2))
     return 0 if result['ok'] else 1
 
@@ -133,9 +128,25 @@ def main():
     if action == 'status':
         status()
     elif action in ('help', '--help', '-h'):
-        print('Omarchy Agent Access\nCommands: status, request MINUTES [REASON], approve, run ID -- /absolute/command [args], shorten MINUTES, close, setup, install-skill, doctor\nRead SKILL.md for agent setup and remote approval.')
+        print('Omarchy Agent Access\nCommands: status, request MINUTES [REASON], approve, approve-terminal ID, update, remove-registration, run ID -- /absolute/command [args], shorten MINUTES, close, setup, install-skill, doctor\nRead SKILL.md for agent setup and remote approval.')
     elif action == 'install-skill':
         install_skill()
+    elif action == 'remove-registration':
+        registration.remove()
+    elif action == 'approve-terminal':
+        if len(sys.argv) not in (3, 5) or (len(sys.argv) == 5 and sys.argv[3] != '--minutes'):
+            raise ValueError('Use approve-terminal REQUEST_ID [--minutes N] in a PTY; no code argument')
+        duration = ['--minutes', minutes(sys.argv[4])] if len(sys.argv) == 5 else []
+        request = broker_status().get('request') or {}
+        if request.get('id') != sys.argv[2] or not request.get('live') or request.get('state') != 'pending':
+            raise ValueError('Request is not pending/live; read status and request anew only when the owner is ready')
+        if not sys.stdin.isatty() or not sys.stdout.isatty():
+            raise ValueError('Approval needs a PTY with hidden input, not a code argument or environment variable')
+        os.execv('/usr/bin/sudo', ['/usr/bin/sudo', '-n', BROKER, 'approve', request['id'], *duration])
+    elif action == 'update':
+        result = subprocess.run(['omarchy', 'plugin', 'update', 'io.github.gustavonline.passwordless-sudo', '--yes'])
+        execute([str(HERE / 'agent-access'), 'install-skill'])
+        return result.returncode
     elif action == 'doctor':
         return doctor()
     elif action == 'request':
