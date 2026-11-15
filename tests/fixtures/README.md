@@ -1,0 +1,1 @@
+Frozen broker 2.0.1 from reviewed commit 201ea00b563e56412973583ded30131315e267c3. SHA256 f9de02eb172c5ca0c2d591bf3b0381368a4dfed0cd8a9fb8837db06f4a2740dd. Used only inside the disposable upgrade/rollback fixture; never installed by the user installer. No credentials or machine state.

@@ -1,3 +1,11 @@
+## 0.6.0
+
+- Select explicit whole minute/hour windows, up to four hours; keep five-minute default.
+- Normalize approval and status to minutes and show the installed root ceiling.
+- Preserve fixed expiry, shorter-only approval, replay protection and enrollment.
+- Ship protected broker 2.1.0; its separate reviewed installation is required for longer access.
+- Keep duration tests and hidden widget smoke tests isolated from real credentials and registration.
+
 ## 0.5.1
 
 - Add plugin-managed Omarchy routing and headless registration without package edits.

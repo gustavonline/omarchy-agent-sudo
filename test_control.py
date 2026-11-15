@@ -43,7 +43,7 @@ class ControlTests(unittest.TestCase):
                 'mode': mode, 'state': state, 'live': live}})['active'])
 
     def test_duration_limits(self):
-        for value in ['0', '16', '9999', '-1', 'abc', '５']:
+        for value in ['0', '241', '9999', '-1', 'abc', '５', '1.5h', 'NaN', 'inf', '+2', ' 2', '5h', '2 h']:
             with self.assertRaises(ValueError):
                 control.minutes(value)
         self.assertEqual(control.minutes('5'), '5')
@@ -119,6 +119,23 @@ class ControlTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 control.main()
 
+
+class DurationTests(unittest.TestCase):
+    def test_equivalent_units_and_maximum(self):
+        for raw, expected in [('1', '1'), ('90m', '90'), ('2h', '120'), ('4h', '240'), ('240m', '240')]:
+            self.assertEqual(control.minutes(raw), expected)
+
+    def test_installed_ceiling_does_not_follow_source_version(self):
+        self.assertEqual(control.window_status({'version': '2.0.1'})['maxMinutes'], 15)
+        self.assertEqual(control.window_status({'version': '2.1.0', 'max_minutes': 240})['maxMinutes'], 240)
+
+    def test_hour_request_and_approval_are_normalized(self):
+        with patch.object(control.sys, 'argv', ['control', 'request', '2h', 'Maintenance']), patch.object(control, 'broker', return_value='{}') as call, patch('builtins.print'):
+            control.main()
+            call.assert_called_once_with('request', '--minutes', '120', '--reason', 'Maintenance')
+        with patch.object(control.sys, 'argv', ['control', 'approve-terminal', 'abc', '--hours', '2']), patch.object(control, 'broker_status', return_value={'request': {'id':'abc', 'live':True, 'state':'pending'}}), patch.object(control.sys.stdin, 'isatty', return_value=True), patch.object(control.sys.stdout, 'isatty', return_value=True), patch.object(control.os, 'execv') as call:
+            control.main()
+            self.assertEqual(call.call_args.args[1][-2:], ['--minutes', '120'])
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)

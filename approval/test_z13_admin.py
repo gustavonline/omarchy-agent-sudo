@@ -144,10 +144,10 @@ class FlowTests(unittest.TestCase):
             self.assertEqual(execute.call_count, 1)
 
     def test_duration_cap_and_pending_replacement(self):
-        for minutes in (0, -1, 16, 9999):
+        for minutes in (0, -1, 241, 9999, True, 1.5, float("inf"), float("nan")):
             with self.assertRaises(ValueError):
                 self.make_request(minutes)
-        self.make_request(15)
+        self.make_request(240)
         with self.assertRaises(ValueError):
             self.make_request()
 
@@ -262,6 +262,42 @@ class FlowTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 broker.run_request(SimpleNamespace(id=value['id'], argv=['/usr/bin/id']))
 
+
+class DurationParserTests(unittest.TestCase):
+    def test_units_and_strict_bounds(self):
+        import argparse
+        parser = argparse.ArgumentParser()
+        broker.duration_arguments(parser, default=5)
+        for argv, expected in [([],5), (['--minutes','1'],1), (['--minutes','240'],240), (['--hours','4'],240), (['--hours','2'],120), (['--minutes','120'],120)]:
+            self.assertEqual(parser.parse_args(argv).minutes, expected)
+        for flag in ('--minutes','--hours'):
+            for invalid in ('0','-1','1.5','NaN','inf','+1',' 1','５','9999'):
+                with patch('sys.stderr'), self.assertRaises(SystemExit):
+                    parser.parse_args([flag,invalid])
+        for argv in (['--hours','5'], ['--minutes','241'], ['--minutes','1','--hours','1']):
+            with patch('sys.stderr'), self.assertRaises(SystemExit):
+                parser.parse_args(argv)
+
+
+class LongWindowTests(unittest.TestCase):
+    setUp = FlowTests.setUp
+    tearDown = FlowTests.tearDown
+    make_request = FlowTests.make_request
+    # Reuse the synthetic environment, not the inherited short-window tests.
+    def test_long_window_approval_shorten_reboot_and_expiry(self):
+        value = self.make_request(minutes=240, window=True)
+        with patch.object(broker.sys.stdin, 'isatty', return_value=True), patch.object(broker.getpass, 'getpass', return_value=broker.totp(SECRET,100)):
+            broker.approve(SimpleNamespace(id=value['id'], minutes=120))
+        path = self.runtime / 'request.json'
+        self.assertEqual(json.loads(path.read_text())['expires'],8200)
+        with patch.object(broker, 'boottime', return_value=2000):
+            broker.shorten(SimpleNamespace(id=value['id'], minutes=120))
+            self.assertEqual(json.loads(path.read_text())['expires'],8200)
+            with self.assertRaises(ValueError): broker.shorten(SimpleNamespace(id=value['id'], minutes=180))
+        for clock, boot in [(8200,'fixture-boot'), (2000,'new-boot')]:
+            with patch.object(broker,'boottime', return_value=clock), patch.object(broker,'boot_id',return_value=boot), patch.object(broker.os,'execve') as call:
+                with self.assertRaises(ValueError): broker.run_request(SimpleNamespace(id=value['id'],argv=['/usr/bin/true']))
+                call.assert_not_called()
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)

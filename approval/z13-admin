@@ -1,7 +1,7 @@
 #!/usr/bin/python3 -I
 """Phone-approved root access window. Install root-owned; never setuid.
 
-Admission expires after at most 15 minutes; completed root changes are not undone.
+Admission expires after at most four hours (240 minutes); completed root changes are not undone.
 Uses RFC 6238 TOTP with HMAC-SHA1, 6 digits and 30-second periods.
 """
 import argparse
@@ -31,9 +31,9 @@ OWNER = None
 OWNER_CONFIG = Path('/etc/omarchy-sudo-approval-owner')
 PRIVATE = Path('/var/lib/z13-admin')
 RUNTIME = Path('/run/z13-admin')
-MAX_MINUTES = 15
+MAX_MINUTES = 240
 REQUEST_TTL = 300
-VERSION = '2.0.1'
+VERSION = '2.1.0'
 
 
 def boottime():
@@ -164,10 +164,29 @@ def validate_argv(argv):
     return [str(executable), *argv[1:]]
 
 
+def duration_minutes(value, multiplier=1):
+    # Whole ASCII units only: no rounding, signs, whitespace or float coercion.
+    if not isinstance(value, str) or not re.fullmatch(r'[0-9]{1,3}', value):
+        raise ValueError('Duration must be positive whole minutes or hours')
+    return validate_minutes(int(value) * multiplier)
+
+
+def validate_minutes(value):
+    if type(value) is not int or not 1 <= value <= MAX_MINUTES:
+        raise ValueError(f'Duration must be 1–{MAX_MINUTES} minutes (up to 4 whole hours)')
+    return value
+
+
+def duration_arguments(parser, default=None, required=False):
+    group = parser.add_mutually_exclusive_group(required=required)
+    group.add_argument('--minutes', dest='minutes', type=duration_minutes)
+    group.add_argument('--hours', dest='minutes', type=lambda value: duration_minutes(value, 60))
+    parser.set_defaults(minutes=default)
+
+
 def request(args):
     argv = validate_argv(args.argv) if args.argv else None
-    if not 1 <= args.minutes <= MAX_MINUTES:
-        raise ValueError(f'Duration must be 1–{MAX_MINUTES} minutes')
+    validate_minutes(args.minutes)
     if not 1 <= len(args.reason) <= 400 or not args.reason.isprintable():
         raise ValueError('Reason must be 1–400 printable characters')
     with locked():
@@ -195,9 +214,11 @@ def approve(args):
         mode = value.get('mode', 'command')
         if mode not in ('command', 'window'):
             raise ValueError('Unknown approval mode')
+        validate_minutes(value['minutes'])
         minutes = getattr(args, 'minutes', None)
         if minutes is not None:
-            if not 1 <= minutes <= value['minutes']:
+            validate_minutes(minutes)
+            if minutes > value['minutes']:
                 raise ValueError('Approval may shorten, never increase the requested duration')
             value['minutes'] = minutes
         if mode == 'command':
@@ -282,12 +303,11 @@ def status(_args):
     if value:
         value['live'] = live(value, boottime(), boot_id()) and value['state'] in ('pending', 'approved')
         value['seconds_left'] = max(0, int(value['expires'] - boottime())) if value['live'] else 0
-    print(json.dumps({'version': VERSION, 'enrolled': enrolled, 'request': value}, ensure_ascii=False, indent=2))
+    print(json.dumps({'version': VERSION, 'max_minutes': MAX_MINUTES, 'enrolled': enrolled, 'request': value}, ensure_ascii=False, indent=2))
 
 
 def shorten(args):
-    if not 1 <= args.minutes <= MAX_MINUTES:
-        raise ValueError(f'Duration must be 1–{MAX_MINUTES} minutes')
+    validate_minutes(args.minutes)
     with locked():
         value = read_json(RUNTIME / 'request.json')
         if not live(value, boottime(), boot_id()) or value.get('id') != args.id or value.get('state') not in ('pending', 'approved'):
@@ -346,18 +366,18 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     subs = parser.add_subparsers(dest='action', required=True)
     req = subs.add_parser('request')
-    req.add_argument('--minutes', type=int, default=5)
+    duration_arguments(req, default=5)
     req.add_argument('--reason', required=True)
     req.add_argument('argv', nargs=argparse.REMAINDER)
     approval = subs.add_parser('approve')
     approval.add_argument('id')
-    approval.add_argument('--minutes', type=int)
+    duration_arguments(approval)
     execution = subs.add_parser('run')
     execution.add_argument('id')
     execution.add_argument('argv', nargs=argparse.REMAINDER)
     shorter = subs.add_parser('shorten')
     shorter.add_argument('id')
-    shorter.add_argument('--minutes', type=int, required=True)
+    duration_arguments(shorter, required=True)
     for action in ('status', 'revoke', 'enroll'):
         subs.add_parser(action)
     args = parser.parse_args()
