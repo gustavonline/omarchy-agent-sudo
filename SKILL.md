@@ -32,7 +32,7 @@ preserves unrelated skills; it does not uninstall the plugin or root enrollment.
 
 1. Recover accepted command scope, then status. No skill grants permission for
    work or authorizes a new account, model or broad passwordless-sudo rule.
-2. Check owner readiness before request MINUTES "purpose" (1–15 minutes).
+2. Check owner readiness before request DURATION "purpose" (1–240 whole minutes, or e.g. 2h for two whole hours). Default quick access remains five minutes. Read status: an older installed broker is still capped at 15 minutes until a reviewed root upgrade.
    Read the actual ID/status. Slow answers are not approval or automatic retries.
 3. In a PTY run approve-terminal REQUEST_ID. It rejects mismatched, expired or
    non-pending IDs. Over SSH use ssh -tt HOST 'omarchy-agent-access approve-terminal REQUEST_ID'.

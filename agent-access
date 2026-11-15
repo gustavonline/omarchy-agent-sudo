@@ -4,6 +4,7 @@ import datetime
 import hashlib
 import json
 import os
+import re
 from pathlib import Path
 import shlex
 import shutil
@@ -43,6 +44,7 @@ def window_status(data):
     return {'ready': ready, 'enrolled': bool(data.get('enrolled')), 'active': active,
             'pending': pending, 'requestId': request.get('id', ''), 'reason': request.get('reason', ''),
             'requestedMinutes': request.get('minutes', 5), 'remainingSeconds': remaining,
+            'maxMinutes': data.get('max_minutes', 15),
             'totalSeconds': request.get('minutes', 5) * 60,
             'expires': (datetime.datetime.now().astimezone() + datetime.timedelta(seconds=remaining)).isoformat() if active else '',
             'timerActive': active, 'kind': 'phone', 'label': 'Phone-approved access' if active else 'Phone approval required'}
@@ -102,9 +104,13 @@ def doctor():
 
 
 def minutes(value):
-    if not value.isascii() or not value.isdigit() or not 1 <= int(value) <= 15:
-        raise ValueError('Phone-approved duration must be 1–15 minutes')
-    return str(int(value))
+    if not isinstance(value, str) or not re.fullmatch(r'[0-9]{1,3}[mh]?', value):
+        raise ValueError('Use whole minutes (e.g. 90 or 90m) or whole hours (e.g. 2h)')
+    unit = value[-1] if value[-1] in 'mh' else ''
+    amount = int(value[:-1] if unit else value) * (60 if unit == 'h' else 1)
+    if not 1 <= amount <= 240:
+        raise ValueError('Phone-approved duration must be 1–240 minutes (up to 4 whole hours)')
+    return str(amount)
 
 
 def terminal(argv):
@@ -128,15 +134,19 @@ def main():
     if action == 'status':
         status()
     elif action in ('help', '--help', '-h'):
-        print('Omarchy Agent Access\nCommands: status, request MINUTES [REASON], approve, approve-terminal ID, update, remove-registration, run ID -- /absolute/command [args], shorten MINUTES, close, setup, install-skill, doctor\nRead SKILL.md for agent setup and remote approval.')
+        print('Omarchy Agent Access\nCommands: status, request DURATION [REASON], approve, approve-terminal ID, update, remove-registration, run ID -- /absolute/command [args], shorten DURATION, close, setup, install-skill, doctor\nDURATION: whole minutes (90 or 90m) or hours (2h), max 4h; default quick 5m. Installed broker may require a reviewed upgrade. Read SKILL.md for agent setup and remote approval.')
     elif action == 'install-skill':
         install_skill()
     elif action == 'remove-registration':
         registration.remove()
     elif action == 'approve-terminal':
-        if len(sys.argv) not in (3, 5) or (len(sys.argv) == 5 and sys.argv[3] != '--minutes'):
-            raise ValueError('Use approve-terminal REQUEST_ID [--minutes N] in a PTY; no code argument')
-        duration = ['--minutes', minutes(sys.argv[4])] if len(sys.argv) == 5 else []
+        if len(sys.argv) not in (3, 5) or (len(sys.argv) == 5 and sys.argv[3] not in ('--minutes', '--hours')):
+            raise ValueError('Use approve-terminal REQUEST_ID [--minutes N | --hours N] in a PTY; no code argument')
+        duration = []
+        if len(sys.argv) == 5:
+            if not re.fullmatch(r'[0-9]{1,3}', sys.argv[4]):
+                raise ValueError('Approval duration must be a whole number in the selected unit')
+            duration = ['--minutes', minutes(sys.argv[4] + ('h' if sys.argv[3] == '--hours' else ''))]
         request = broker_status().get('request') or {}
         if request.get('id') != sys.argv[2] or not request.get('live') or request.get('state') != 'pending':
             raise ValueError('Request is not pending/live; read status and request anew only when the owner is ready')
@@ -190,7 +200,7 @@ def main():
         subprocess.Popen(args, start_new_session=True, stdin=subprocess.DEVNULL,
                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     else:
-        raise ValueError('Use status, request MINUTES [REASON], approve, close, shorten MINUTES, setup or native-launch MINUTES')
+        raise ValueError('Use status, request DURATION [REASON], approve, close, shorten DURATION, setup or native-launch MINUTES')
 
 
 if __name__ == '__main__':

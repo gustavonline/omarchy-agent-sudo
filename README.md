@@ -34,7 +34,7 @@ Requires Omarchy with Quickshell, Python 3, sudo, jq, qrencode, Foot and flock. 
 
 - **Left-click:** open the phone-code terminal with the default duration. If access is already open, show its status.
 - **Right-click:** open the panel to choose a duration, shorten a window or close it.
-- **Default:** five minutes. Change it in Omarchy's widget settings; the limit is 15 minutes.
+- **Default:** five minutes. Change it in Omarchy's widget settings; the reviewed broker limit is four hours (240 minutes). Minutes and hours are selectable in the panel. The panel reads the installed broker limit: an older 2.0.1 broker still permits only 15 minutes until explicitly upgraded.
 
 The widget starts in the centre section and can be moved like other Omarchy widgets. It uses the stock panel components, foreground colours, typography and progress style. The bar counts down while access is open.
 
@@ -62,7 +62,7 @@ omarchy-agent-access shorten 1
 omarchy-agent-access close
 ```
 
-Approval needs a PTY. Enter the code at the hidden prompt, never in command arguments or environment variables. One code opens the window, not just one command. The human may reduce the requested duration at approval with `approve-terminal REQUEST_ID --minutes N`. A longer window requires a new request and code.
+Approval needs a PTY. Enter the code at the hidden prompt, never in command arguments or environment variables. One code opens the window, not just one command. The human may reduce the requested duration at approval with `approve-terminal REQUEST_ID --minutes N` or `--hours N`. A longer window requires a new request and code.
 
 The protected broker retains its older `z13-admin` name for compatibility with existing enrollment. It is not tied to Z13 hardware. This version supports one enrolled owner account; remote agents use that account's existing authorized connection.
 
@@ -106,3 +106,10 @@ docker run --rm --network=none --pids-limit=128 --memory=384m agent-access-test
 The container tests use a synthetic owner and generated test credentials. No host directories or real enrollment data are mounted.
 
 MIT. See [LICENSE](LICENSE).
+
+
+### Custom access windows
+
+Use explicit whole units: omarchy-agent-access request 90m "Maintenance" or request 2h "Maintenance". Bare numbers are minutes; quick without a duration uses five minutes. The protected broker also accepts mutually exclusive --minutes N / --hours N on request, approval and shorten. Fractions, signs, whitespace, non-finite numbers, zero and durations above four hours are rejected; there is no rounding or automatic renewal. The approval terminal displays normalized minutes before asking for the code. Status and the widget show the granted duration and remaining time; multiple commands never restart that clock. Shortening never moves the existing expiry later. Close or expiry requires a new request and fresh code before more commands.
+
+Version 0.6.0 includes broker 2.1.0. Updating only user files does not update the root service or its ceiling. Review the exact commit and broker hash, retain a protected recovery copy of the old binaries/policy, then use the normal owner-authorized installer. It preserves phone enrollment and ordinary sudo policy. Do not treat an existing access window as authorization to upgrade the broker. A rollback of a newly granted long window must revoke that window first; restoring an older binary alone cannot shorten an already persisted expiry.

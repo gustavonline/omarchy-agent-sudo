@@ -6,7 +6,7 @@ plugin_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 jq -e '
   .schemaVersion == 1 and
   .id == "io.github.gustavonline.passwordless-sudo" and
-  .version == "0.5.1" and
+  .version == "0.6.0" and
   (.kinds | index("bar-widget")) != null and
   .entryPoints.barWidget == "Panel.qml"
 ' "$plugin_dir/manifest.json" >/dev/null

@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 plugin_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
-jq -e '.schemaVersion == 1 and .id == "io.github.gustavonline.passwordless-sudo" and .version == "0.5.1" and .entryPoints.barWidget == "Panel.qml"' "$plugin_dir/manifest.json" >/dev/null
+jq -e '.schemaVersion == 1 and .id == "io.github.gustavonline.passwordless-sudo" and .version == "0.6.0" and .entryPoints.barWidget == "Panel.qml"' "$plugin_dir/manifest.json" >/dev/null
 bash -n "$plugin_dir/native-sudo-control" "$plugin_dir/install-approval.sh" "$plugin_dir/install-user.sh"
 python3 -B "$plugin_dir/test_control.py"
 python3 -B "$plugin_dir/tests/test_registration.py"

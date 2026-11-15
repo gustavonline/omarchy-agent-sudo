@@ -75,7 +75,13 @@ def prompt(args, code):
 
 
 assert os.geteuid() == 0 and Path('/.dockerenv').exists(), 'Container-only test'
+new_broker = (PLUGIN / 'approval/z13-admin').read_bytes()
+legacy = Path('/opt/legacy-broker')
+assert legacy.exists(), 'Provide the unchanged reviewed 2.0.1 broker in the build fixture'
+assert hashlib.sha256(legacy.read_bytes()).hexdigest() == 'f9de02eb172c5ca0c2d591bf3b0381368a4dfed0cd8a9fb8837db06f4a2740dd'
+(PLUGIN / 'approval/z13-admin').write_bytes(legacy.read_bytes())
 root('/bin/bash', str(PLUGIN / 'install-approval.sh'), OWNER)
+(PLUGIN / 'approval/z13-admin').write_bytes(new_broker)
 assert json.loads(owner('status').stdout)['version'] == '2.0.1'
 
 # Capture the generated enrollment URI inside this disposable container only.
@@ -92,13 +98,28 @@ assert auth.stat().st_mode & 0o777 == 0o600
 original_auth = auth.read_bytes()
 secret = json.loads(original_auth)['secret']
 
+# Upgrade old 2.0.1 with an existing pending request; preserve enrollment,
+# consumed counter and request bytes rather than granting fresh access.
+old_request = json.loads(owner('request', '--minutes', '15', '--reason', 'Upgrade fixture').stdout)
+request_path = Path('/run/z13-admin/request.json')
+old_request_bytes = request_path.read_bytes()
 # An upgrade must preserve enrollment and replay protection byte for byte.
 root('/bin/bash', str(PLUGIN / 'install-approval.sh'), OWNER)
 assert auth.read_bytes() == original_auth
-request = json.loads(owner('request', '--minutes', '2', '--reason', 'Container fixture').stdout)
+assert request_path.read_bytes() == old_request_bytes
+assert json.loads(owner('status').stdout)['version'] == '2.1.0'
+owner('revoke')
+# A real user cannot bypass the broker duration parser.
+for invalid in ('0', '-1', '241', '1.5', 'NaN', 'inf', '+2', ' 2', '５'):
+    assert owner('request', '--minutes', invalid, '--reason', 'Invalid fixture', check=False).returncode != 0
+assert json.loads(owner('status').stdout)['max_minutes'] == 240
+request = json.loads(owner('request', '--hours', '4', '--reason', 'Container fixture').stdout)
+assert request['minutes'] == 240
+assert owner('approve', request['id'], '--hours', '5', check=False).returncode != 0
 code = otp(secret, int(time.time() // 30) + 1)
-assert prompt([BROKER, 'approve', request['id']], lambda: code) == 0
+assert prompt([BROKER, 'approve', request['id'], '--hours', '2'], lambda: code) == 0
 first = json.loads(owner('status').stdout)['request']
+assert first['minutes'] == 120 and 7195 <= first['seconds_left'] <= 7200
 assert 'uid=0' in owner('run', request['id'], '--', '/usr/bin/id').stdout
 owner('run', request['id'], '--', '/usr/bin/true')
 second = json.loads(owner('status').stdout)['request']
@@ -119,5 +140,14 @@ Path('/usr/sbin/visudo').write_text('#!/bin/sh\nn=$(cat /tmp/visudo-count 2>/dev
 Path('/usr/sbin/visudo').chmod(0o755)
 assert root('/bin/bash', str(PLUGIN / 'install-approval.sh'), OWNER, check=False).returncode != 0
 assert all(hashlib.sha256(Path(path).read_bytes()).digest() == digest for path, digest in before.items())
+assert json.loads(owner('status').stdout)['enrolled'] is True
+# Reviewed rollback restores the old ceiling; it must first close any grant.
+owner('revoke')
+root('/bin/cp', str(legacy), BROKER)
+root('/bin/cp', str(legacy), BROKER + '-enroll')
+root('/bin/chmod', '0755', BROKER)
+assert json.loads(owner('status').stdout)['version'] == '2.0.1'
+assert owner('request', '--minutes', '240', '--reason', 'Old ceiling fixture', check=False).returncode != 0
+assert auth.read_bytes() != original_auth  # replay counter was advanced, not reset
 assert json.loads(owner('status').stdout)['enrolled'] is True
 print('Fresh install, enrollment, upgrade preservation, multiple commands, shortening, revoke, replay denial, non-blocking status and rollback passed.')

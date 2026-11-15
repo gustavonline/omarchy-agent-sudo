@@ -17,16 +17,24 @@ Panel {
   readonly property string fontFamily: bar ? bar.fontFamily : Style.font.family
   readonly property string controlPath: decodeURIComponent(String(Qt.resolvedUrl("agent-access")).replace(/^file:\/\//, ""))
   readonly property bool animate: !settings || settings.animations !== false
-  readonly property int defaultMinutes: settings && Number(settings.defaultMinutes) >= 1 && Number(settings.defaultMinutes) <= 15 ? Number(settings.defaultMinutes) : 5
+  readonly property int defaultMinutes: settings && Number(settings.defaultMinutes) >= 1 && Number(settings.defaultMinutes) <= root.maxMinutes && Number.isInteger(Number(settings.defaultMinutes)) ? Number(settings.defaultMinutes) : 5
+  readonly property int maxMinutes: Number.isInteger(status.maxMinutes) && status.maxMinutes >= 1 && status.maxMinutes <= 240 ? status.maxMinutes : 15
+  property bool durationHours: false
+  readonly property int durationLimit: root.accessOpen ? Math.min(root.maxMinutes, Math.max(1, Math.floor(root.remaining / 60))) : root.maxMinutes
+  readonly property int unitFactor: durationHours ? 60 : 1
   readonly property bool accessOpen: status.active === true && remaining > 0
   readonly property bool pending: status.pending === true
   readonly property bool configured: status.ready === true && status.enrolled === true
   property var status: ({ready: false, enrolled: false, active: false, pending: false, nativeActive: false})
   property int selectedMinutes: 5
+  property bool selectionTouched: false
+  property bool componentReady: false
   property int remaining: 0
   property double deadline: 0
   property bool busy: false
   property bool customDuration: false
+  readonly property bool editingDuration: root.configured && !root.pending && ((!root.accessOpen && root.customDuration) || (root.accessOpen && root.shortening))
+  readonly property bool durationInputValid: !editingDuration || (/^[0-9]{1,3}$/.test(durationInput.field.contentItem.text) && durationInput.field.contentItem.acceptableInput && Number(durationInput.field.contentItem.text) * unitFactor === selectedMinutes && selectedMinutes <= durationLimit)
   property bool shortening: false
   property string feedback: ""
   property bool feedbackError: false
@@ -38,7 +46,7 @@ Panel {
   implicitHeight: barButton.implicitHeight
 
   function clock(seconds) {
-    return String(Math.floor(seconds / 60)).padStart(2, "0") + ":" + String(seconds % 60).padStart(2, "0")
+    return (seconds >= 3600 ? Math.floor(seconds / 3600) + ":" : "") + String(Math.floor(seconds / 60) % 60).padStart(2, "0") + ":" + String(seconds % 60).padStart(2, "0")
   }
   function refresh() { if (!statusProcess.running) statusProcess.running = true }
   function run(actionName, value) {
@@ -50,10 +58,21 @@ Panel {
     if (value !== undefined && String(value) !== "") actionProcess.command.push(String(value))
     actionProcess.running = true
   }
-  function requestAccess() { run("request", selectedMinutes) }
+  function syncDefault() {
+    if (componentReady && !selectionTouched && status.active !== true && status.pending !== true && !customDuration && !shortening) selectedMinutes = defaultMinutes
+  }
+  onDefaultMinutesChanged: syncDefault()
+  onStatusChanged: syncDefault()
+  function requestAccess() {
+    if (!durationInputValid || !Number.isInteger(selectedMinutes) || selectedMinutes < 1 || selectedMinutes > maxMinutes) {
+      feedback = "Choose whole minutes or hours within the installed service limit."; feedbackError = true; return
+    }
+    run("request", selectedMinutes)
+  }
 
   Component.onCompleted: {
-    selectedMinutes = defaultMinutes
+    componentReady = true
+    syncDefault()
     skillProcess.running = true
     refresh()
   }
@@ -243,34 +262,52 @@ Panel {
             visible: root.configured && !root.accessOpen && !root.pending
             width: parent.width; spacing: Style.space(8)
             Repeater {
-              model: [5, 10, 15]
+              model: [5, 15, 60]
               Button {
                 required property int modelData
                 width: (content.width - Style.space(16)) / 3
-                text: modelData + " min"
+                text: modelData === 60 ? "1 hour" : modelData + " min"
+                enabled: modelData <= root.maxMinutes
                 bordered: true
                 foreground: root.selectedMinutes === modelData ? root.foreground : root.muted
                 fontFamily: root.fontFamily
-                onClicked: root.selectedMinutes = modelData
+                onClicked: { root.selectionTouched = true; root.durationHours = false; root.selectedMinutes = modelData }
               }
             }
           }
 
+          Row {
+            visible: durationInput.visible
+            width: parent.width; spacing: Style.space(8)
+            Repeater {
+              model: ["Minutes", "Hours"]
+              Button {
+                required property string modelData
+                width: (content.width - Style.space(8)) / 2
+                text: modelData; fontFamily: root.fontFamily
+                enabled: modelData === "Minutes" || root.durationLimit >= 60
+                foreground: (modelData === "Hours") === root.durationHours ? root.foreground : root.muted
+                onClicked: { root.selectionTouched = true; root.durationHours = modelData === "Hours"; root.selectedMinutes = root.unitFactor }
+              }
+            }
+          }
           NumberField {
             id: durationInput
-            visible: root.configured && !root.pending && ((!root.accessOpen && root.customDuration) || (root.accessOpen && root.shortening))
+            visible: root.editingDuration
             width: parent.width; fieldWidth: width
-            label: root.accessOpen ? "Minutes from now" : "Minutes"
-            from: 1; to: root.accessOpen ? Math.max(1, Math.floor(root.remaining / 60)) : 15
-            value: root.selectedMinutes; stepSize: 1
+            label: (root.durationHours ? "Hours" : "Minutes") + (root.accessOpen ? " from now" : "")
+            from: 1; to: Math.max(1, Math.floor(root.durationLimit / root.unitFactor))
+            value: Math.max(1, Math.floor(root.selectedMinutes / root.unitFactor)); stepSize: 1
             foreground: root.foreground; accent: root.accent; fontFamily: root.fontFamily
-            onModified: function(value) { root.selectedMinutes = value }
+            onModified: function(value) {
+              if (Number.isInteger(value) && value >= 1 && value * root.unitFactor <= root.durationLimit) { root.selectionTouched = true; root.selectedMinutes = value * root.unitFactor }
+            }
           }
 
           Button {
             width: parent.width
             text: !root.configured ? "Set up phone" : root.accessOpen ? "Close access" : root.pending ? "Enter phone code" : "Request " + root.selectedMinutes + " minutes"
-            enabled: !root.busy
+            enabled: !root.busy && (root.pending || root.accessOpen || root.durationInputValid)
             bordered: true; foreground: root.foreground; fontFamily: root.fontFamily
             verticalPadding: Style.spacing.controlPaddingY
             onClicked: {
@@ -285,19 +322,19 @@ Panel {
             visible: root.configured && (!root.accessOpen || root.remaining > 60)
             width: parent.width
             text: root.pending ? "Cancel request" : root.accessOpen ? (root.shortening ? "Apply shorter window" : "Shorten window") : (root.customDuration ? "Hide custom duration" : "Custom duration")
-            enabled: !root.busy
+            enabled: !root.busy && (!root.shortening || root.durationInputValid)
             foreground: root.muted; fontFamily: root.fontFamily
             onClicked: {
               if (root.pending) root.run("close", "")
               else if (root.accessOpen && root.shortening) root.run("shorten", root.selectedMinutes)
-              else if (root.accessOpen) { root.selectedMinutes = 1; root.shortening = true }
-              else root.customDuration = !root.customDuration
+              else if (root.accessOpen) { root.selectionTouched = true; root.durationHours = false; root.selectedMinutes = 1; root.shortening = true }
+              else { root.selectionTouched = true; root.customDuration = !root.customDuration }
             }
           }
 
           Text {
             width: parent.width
-            text: root.pending ? "Remote? Send a fresh phone code to your agent." : root.configured ? "Phone connected · Up to 15 minutes" : "Setup needs your normal administrator password once."
+            text: root.pending ? "Remote? Send a fresh phone code to your agent." : root.configured ? "Phone connected · Up to " + root.maxMinutes + " minutes" : "Setup needs your normal administrator password once."
             color: root.muted; font.family: root.fontFamily; font.pixelSize: Style.font.caption
             wrapMode: Text.WordWrap
           }
