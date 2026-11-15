@@ -40,10 +40,15 @@ The widget starts in the centre section and can be moved like other Omarchy widg
 
 After enrollment you do not need to be near the computer. Your agent requests access when you are ready. You may choose an existing trusted
 chat to send a code, but it remains subject to that chat's retention. The agent
-needs a real private-input mechanism to transfer it to the hidden PTY without
-logging. A tool whose stdin arguments are recorded does not provide that. If it
-is unavailable, enter the code in your own SSH terminal; the agent reads status
-and continues. No browser approval URL/server or transcript-deletion promise.
+can use either the owner's own SSH/terminal (or a genuinely private-input
+facility), or the owner's explicitly selected trusted-chat-to-agent-PTY flow.
+For the latter, the agent submits the fresh, single-use code through its available
+stdin tool to the broker's hidden prompt. The code can remain in both chat and
+tool-input transcripts: hidden terminal echo does not make that a secret channel.
+The owner can choose this exposure; a missing private-input API does not forbid it.
+Do not repeat an already clear session choice. Never echo or report the code,
+put it in CLI arguments/environment/files, add diagnostic logs, replay it or
+promise transcript deletion. No browser approval server is introduced.
 
 ## Agent commands
 

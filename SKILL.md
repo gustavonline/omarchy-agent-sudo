@@ -49,15 +49,23 @@ preserves unrelated skills; it does not uninstall the plugin or root enrollment.
 The owner may explicitly choose an existing trusted chat to send a fresh code.
 That exposes the code to the chat's retention; never promise transcript deletion.
 Do not echo it, quote it in a report, store it, or include it in commands.
-Transfer directly to the hidden PTY only through an actually available private
-input mechanism. Hidden terminal echo does not protect an agent tool's logged
-input: a write-stdin tool with recorded arguments is not a secret-input API.
+There are two supported input choices:
 
-If no private-input mechanism exists, explain that before requesting a code.
-The supported fallback is the owner's own SSH/terminal, entering the code directly
-at approve-terminal's hidden prompt; the agent resumes after approved status.
-There is no browser approval URL/server. This plugin cannot make another app's
-logged tool inputs private or clear its chat history.
+- The owner enters the code directly in their own SSH/terminal, or uses a real
+  private-input facility if the host provides one.
+- The owner explicitly chooses their existing trusted chat and accepts its actual
+  chat/tool-input retention. The agent then enters that single-use code directly
+  into the broker's hidden PTY using the available stdin tool. This does not require
+  a private-input API and is not described as a secret channel. The code may remain
+  in the chat and tool-input transcript even though terminal echo is disabled.
+
+Confirm the owner's transport preference before requesting a code; reuse a clear
+choice already made for this session. Do not repeatedly ask for the same choice.
+Neither choice permits code echo, CLI argv/env/files, extra diagnostic logs,
+reports, retransmission or replay. Use the fresh code once, verify actual broker
+status, then continue only the accepted commands. A failed/expired code is not
+reused; ask for a new one only when ready. Never promise transcript erasure or
+silently switch to a public approval server. The plugin does not read chat itself.
 
 ## Enrollment and root upgrades
 
