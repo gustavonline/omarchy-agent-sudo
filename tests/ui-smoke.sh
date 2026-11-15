@@ -27,6 +27,30 @@ ShellRoot {
   Loader {
     source: '''+source+'''
     onLoaded: {
+      item.settings = {defaultMinutes: 120}
+      item.status = {maxMinutes: 15, ready: true, enrolled: true}
+      if (item.selectedMinutes !== 5) throw new Error("Initial old ceiling default failed")
+      Qt.callLater(function() {
+        item.status = {maxMinutes: 240, ready: true, enrolled: true}
+        if (item.defaultMinutes !== 120 || item.selectedMinutes !== 120) throw new Error("Async installed ceiling did not apply saved hour default")
+        item.selectionTouched = true
+        item.selectedMinutes = 90
+        item.settings = {defaultMinutes: 180}
+        if (item.selectedMinutes !== 90) throw new Error("Default clobbered explicit selection")
+        item.selectionTouched = false
+        item.status = {maxMinutes: 240, ready: true, enrolled: true, pending: true}
+        item.selectedMinutes = 90
+        item.settings = {defaultMinutes: 120}
+        if (item.selectedMinutes !== 90) throw new Error("Default clobbered pending selection")
+        item.status = {maxMinutes: 240, ready: true, enrolled: true, active: true}
+        item.settings = {defaultMinutes: 180}
+        if (item.selectedMinutes !== 90) throw new Error("Default clobbered active selection")
+        item.customDuration = true
+        item.status = {maxMinutes: 240, ready: true, enrolled: true}
+        item.settings = {defaultMinutes: 120}
+        if (item.selectedMinutes !== 90) throw new Error("Default clobbered custom selection")
+        item.customDuration = false
+        item.settings = {}
       if (item.clock(65) !== "01:05") throw new Error("Countdown format failed")
       if (item.clock(3661) !== "1:01:01") throw new Error("Long countdown failed")
       item.status = {maxMinutes: 240, ready: true, enrolled: true}
@@ -44,6 +68,7 @@ ShellRoot {
       if (item.maxMinutes !== 15) throw new Error("Old root ceiling was hidden")
       console.log("AGENT_ACCESS_COMPONENT_READY")
       Qt.callLater(function() { Qt.quit() })
+      })
     }
   }
   Timer { interval: 8000; running: true; onTriggered: Qt.quit() }

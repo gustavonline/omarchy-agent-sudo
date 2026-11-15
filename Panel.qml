@@ -27,6 +27,8 @@ Panel {
   readonly property bool configured: status.ready === true && status.enrolled === true
   property var status: ({ready: false, enrolled: false, active: false, pending: false, nativeActive: false})
   property int selectedMinutes: 5
+  property bool selectionTouched: false
+  property bool componentReady: false
   property int remaining: 0
   property double deadline: 0
   property bool busy: false
@@ -56,6 +58,11 @@ Panel {
     if (value !== undefined && String(value) !== "") actionProcess.command.push(String(value))
     actionProcess.running = true
   }
+  function syncDefault() {
+    if (componentReady && !selectionTouched && status.active !== true && status.pending !== true && !customDuration && !shortening) selectedMinutes = defaultMinutes
+  }
+  onDefaultMinutesChanged: syncDefault()
+  onStatusChanged: syncDefault()
   function requestAccess() {
     if (!durationInputValid || !Number.isInteger(selectedMinutes) || selectedMinutes < 1 || selectedMinutes > maxMinutes) {
       feedback = "Choose whole minutes or hours within the installed service limit."; feedbackError = true; return
@@ -64,7 +71,8 @@ Panel {
   }
 
   Component.onCompleted: {
-    selectedMinutes = defaultMinutes
+    componentReady = true
+    syncDefault()
     skillProcess.running = true
     refresh()
   }
@@ -263,7 +271,7 @@ Panel {
                 bordered: true
                 foreground: root.selectedMinutes === modelData ? root.foreground : root.muted
                 fontFamily: root.fontFamily
-                onClicked: { root.durationHours = false; root.selectedMinutes = modelData }
+                onClicked: { root.selectionTouched = true; root.durationHours = false; root.selectedMinutes = modelData }
               }
             }
           }
@@ -279,7 +287,7 @@ Panel {
                 text: modelData; fontFamily: root.fontFamily
                 enabled: modelData === "Minutes" || root.durationLimit >= 60
                 foreground: (modelData === "Hours") === root.durationHours ? root.foreground : root.muted
-                onClicked: { root.durationHours = modelData === "Hours"; root.selectedMinutes = root.unitFactor }
+                onClicked: { root.selectionTouched = true; root.durationHours = modelData === "Hours"; root.selectedMinutes = root.unitFactor }
               }
             }
           }
@@ -292,7 +300,7 @@ Panel {
             value: Math.max(1, Math.floor(root.selectedMinutes / root.unitFactor)); stepSize: 1
             foreground: root.foreground; accent: root.accent; fontFamily: root.fontFamily
             onModified: function(value) {
-              if (Number.isInteger(value) && value >= 1 && value * root.unitFactor <= root.durationLimit) root.selectedMinutes = value * root.unitFactor
+              if (Number.isInteger(value) && value >= 1 && value * root.unitFactor <= root.durationLimit) { root.selectionTouched = true; root.selectedMinutes = value * root.unitFactor }
             }
           }
 
@@ -319,8 +327,8 @@ Panel {
             onClicked: {
               if (root.pending) root.run("close", "")
               else if (root.accessOpen && root.shortening) root.run("shorten", root.selectedMinutes)
-              else if (root.accessOpen) { root.durationHours = false; root.selectedMinutes = 1; root.shortening = true }
-              else root.customDuration = !root.customDuration
+              else if (root.accessOpen) { root.selectionTouched = true; root.durationHours = false; root.selectedMinutes = 1; root.shortening = true }
+              else { root.selectionTouched = true; root.customDuration = !root.customDuration }
             }
           }
 
